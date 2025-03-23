@@ -1,6 +1,7 @@
 # utils/menu_manager.py
 """
-Centralny moduł do zarządzania systemem menu bota
+Scentralizowany moduł do zarządzania systemem menu bota
+Łączy funkcjonalności z menu_manager.py i menu_utils.py
 """
 import logging
 from telegram import InlineKeyboardMarkup, ParseMode
@@ -99,6 +100,41 @@ def get_menu_message_id(context, user_id):
     """
     menu_state.load_from_context(context, user_id)
     return menu_state.get_message_id(user_id)
+
+def safe_markdown(text):
+    """
+    Przygotowuje tekst do bezpiecznego formatowania Markdown
+    
+    Args:
+        text (str): Tekst do zabezpieczenia
+    
+    Returns:
+        str: Zabezpieczony tekst
+    """
+    if not text:
+        return ""
+    
+    # Upewnij się, że mamy string
+    text = str(text)
+    
+    # Napraw najbardziej problematyczne elementy
+    # 1. Upewnij się, że gwiazdki są parzyste
+    if text.count('*') % 2 != 0:
+        text = text.replace('*', '\\*')
+    
+    # 2. Upewnij się, że podkreślniki są parzyste
+    if text.count('_') % 2 != 0:
+        text = text.replace('_', '\\_')
+    
+    # 3. Upewnij się, że backticki są parzyste
+    if text.count('`') % 2 != 0:
+        text = text.replace('`', '\\`')
+    
+    # 4. Unikaj problematycznych sekwencji
+    text = text.replace('__', '\\_\\_')
+    text = text.replace('**', '\\*\\*')
+    
+    return text
 
 async def update_menu_message(query, text, keyboard, parse_mode=None):
     """
@@ -205,7 +241,43 @@ async def create_new_menu_message(context, chat_id, text, keyboard, parse_mode=N
         except Exception as e2:
             logger.error(f"Drugi błąd przy tworzeniu wiadomości menu: {e2}")
             return None
-            
+
+def create_menu_buttons(button_configs, language):
+    """
+    Tworzy przyciski menu na podstawie konfiguracji
+    
+    Args:
+        button_configs (list): Lista konfiguracji przycisków
+        language (str): Kod języka
+    
+    Returns:
+        InlineKeyboardMarkup: Klawiatura z przyciskami
+    """
+    from telegram import InlineKeyboardButton
+    
+    keyboard = []
+    
+    for row_config in button_configs:
+        row = []
+        for button_config in row_config:
+            if isinstance(button_config, tuple) and len(button_config) == 2:
+                text_key, callback_data = button_config
+                button_text = get_text(text_key, language)
+                row.append(InlineKeyboardButton(button_text, callback_data=callback_data))
+            elif isinstance(button_config, tuple) and len(button_config) == 3:
+                text_key, callback_data, prefix = button_config
+                button_text = f"{prefix} {get_text(text_key, language)}"
+                row.append(InlineKeyboardButton(button_text, callback_data=callback_data))
+            elif isinstance(button_config, dict):
+                # Dla przycisków z URL
+                text_key = button_config.get('text_key')
+                url = button_config.get('url')
+                button_text = get_text(text_key, language)
+                row.append(InlineKeyboardButton(button_text, url=url))
+        keyboard.append(row)
+    
+    return InlineKeyboardMarkup(keyboard)
+
 def get_navigation_path(state, language):
     """
     Generuje tekst paska nawigacyjnego
