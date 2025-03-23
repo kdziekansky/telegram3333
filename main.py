@@ -13,6 +13,12 @@ from config import TELEGRAM_TOKEN
 from telegram import Update
 from telegram.ext import ContextTypes
 from utils.menu_manager import update_menu_message, store_menu_state
+from handlers.language_handler import language_command, show_language_selection, handle_language_selection
+from handlers.menu_handler import handle_menu_callback, set_user_name
+from handlers.menu_navigation import menu_command
+from handlers.model_handler import models_command, handle_model_selection
+from handlers.language_handler import language_command, handle_language_selection
+from handlers.settings_handler import handle_settings_callbacks
 
 # Napraw problem z proxy w httpx
 from telegram.request import HTTPXRequest
@@ -114,6 +120,8 @@ application.add_handler(CallbackQueryHandler(handle_callback_query))
 application.add_handler(CommandHandler("models", models_command))
 application.add_handler(CallbackQueryHandler(handle_mode_callback, pattern="^mode_"))
 application.add_handler(CallbackQueryHandler(handle_model_selection, pattern="^settings_model$"))
+application.add_handler(CallbackQueryHandler(handle_settings_callbacks, pattern="^settings_"))
+
 
 # Handler wiadomości tekstowych
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
