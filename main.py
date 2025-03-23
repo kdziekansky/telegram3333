@@ -45,7 +45,7 @@ from handlers.credit_handler import credits_command, buy_command, handle_credit_
 from handlers.code_handler import code_command, admin_generate_code
 from handlers.image_handler import generate_image
 from handlers.pdf_handler import handle_pdf_translation
-from handlers.translate_handler import translate_command
+from handlers.translate_handler import TranslateHandler
 from handlers.payment_handler import payment_command, subscription_command, handle_payment_callback, transactions_command
 from handlers.admin_handler import get_user_info
 from handlers.admin_package_handler import add_package, list_packages, toggle_package, add_default_packages
@@ -61,7 +61,7 @@ from handlers.confirmation_handler import (
 from handlers.callback_handler import handle_callback_query, handle_buy_credits, handle_unknown_callback
 from handlers.basic_commands import restart_command, check_status, new_chat
 from handlers.message_handler import message_handler
-from handlers.file_handler import handle_document, handle_photo
+from handlers.file_handler import FileHandler
 
 # Wrapper function for mode selection
 async def handle_mode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -84,7 +84,7 @@ application.add_handler(CommandHandler("image", generate_image))
 application.add_handler(CommandHandler("export", export_conversation))
 application.add_handler(CommandHandler("language", language_command))
 application.add_handler(CommandHandler("onboarding", onboarding_command))
-application.add_handler(CommandHandler("translate", translate_command))
+application.add_handler(CommandHandler("translate", TranslateHandler.translate_command))
 application.add_handler(CommandHandler("credits", credits_command))
 application.add_handler(CommandHandler("buy", buy_command))
 application.add_handler(CommandHandler("creditstats", credit_stats_command))
@@ -94,7 +94,11 @@ application.add_handler(CommandHandler("code", code_command))
 application.add_handler(CommandHandler("activate", activate_license))
 application.add_handler(CommandHandler("status", check_subscription))
 application.add_handler(CommandHandler("setname", set_user_name))
-
+# Rejestracja handlera potwierdzenia operacji
+application.add_handler(CallbackQueryHandler(
+    TranslateHandler.handle_operation_confirmation, 
+    pattern="^confirm_operation_"
+))
 
 # Handlery dla administratorów
 application.add_handler(CommandHandler("addpackage", add_package))
@@ -113,7 +117,6 @@ application.add_handler(CallbackQueryHandler(handle_credit_callback, pattern="^(
 application.add_handler(CallbackQueryHandler(handle_payment_callback, pattern="^(payment_|buy_package_)"))
 application.add_handler(CallbackQueryHandler(handle_onboarding_callback, pattern="^onboarding_"))
 application.add_handler(CallbackQueryHandler(handle_image_confirmation, pattern="^confirm_image_"))
-application.add_handler(CallbackQueryHandler(handle_document_confirmation, pattern="^confirm_doc_"))
 application.add_handler(CallbackQueryHandler(handle_photo_confirmation, pattern="^confirm_photo_"))
 application.add_handler(CallbackQueryHandler(handle_message_confirmation, pattern="^confirm_message$|^cancel_operation$"))
 application.add_handler(CallbackQueryHandler(handle_callback_query))
@@ -121,14 +124,12 @@ application.add_handler(CommandHandler("models", models_command))
 application.add_handler(CallbackQueryHandler(handle_mode_callback, pattern="^mode_"))
 application.add_handler(CallbackQueryHandler(handle_model_selection, pattern="^settings_model$"))
 application.add_handler(CallbackQueryHandler(handle_settings_callbacks, pattern="^settings_"))
-
+application.add_handler(MessageHandler(filters.Document.ALL, FileHandler.handle_document))
+application.add_handler(MessageHandler(filters.PHOTO, FileHandler.handle_photo))
+application.add_handler(CallbackQueryHandler(FileHandler.handle_document_confirmation, pattern="^confirm_doc_analysis_"))
 
 # Handler wiadomości tekstowych
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
-
-# Handler dokumentów i zdjęć
-application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
 # Uruchomienie bota
 if __name__ == "__main__":
