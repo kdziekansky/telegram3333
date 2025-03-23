@@ -1,4 +1,4 @@
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode, ChatAction
 from config import CREDIT_COSTS, DALL_E_MODEL
@@ -10,7 +10,7 @@ from utils.ui_elements import info_card, section_divider, feature_badge, progres
 from utils.visual_styles import style_message, create_header, create_section, create_status_indicator
 from utils.tips import get_random_tip, should_show_tip
 from utils.credit_warnings import check_operation_cost, format_credit_usage_report
-from utils.menu_manager import update_menu_message  # Dodany import
+from utils.menu_manager import update_menu_message  # Poprawiony import
 import asyncio
 
 async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):

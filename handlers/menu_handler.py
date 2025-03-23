@@ -79,6 +79,30 @@ def create_main_menu_markup(language):
     ]
     return InlineKeyboardMarkup(keyboard)
 
+async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Wyświetla główne menu bota
+    Użycie: /menu
+    """
+    user_id = update.effective_user.id
+    language = get_user_language(context, user_id)
+    
+    # Przygotuj tekst powitalny
+    welcome_text = get_text("welcome_message", language, bot_name=BOT_NAME)
+    
+    # Utwórz klawiaturę menu
+    reply_markup = create_main_menu_markup(language)
+    
+    # Wyślij menu
+    message = await update.message.reply_text(
+        welcome_text,
+        reply_markup=reply_markup,
+        parse_mode=ParseMode.MARKDOWN
+    )
+    
+    # Zapisz ID wiadomości menu i stan menu
+    store_menu_state(context, user_id, 'main', message.message_id)
+
 def create_chat_modes_markup(language):
     """Tworzy klawiaturę dla menu trybów czatu"""
     keyboard = []

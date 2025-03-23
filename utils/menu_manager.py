@@ -4,7 +4,7 @@ Scentralizowany moduł do zarządzania systemem menu bota
 Łączy funkcjonalności z menu_manager.py i menu_utils.py
 """
 import logging
-from telegram import InlineKeyboardMarkup, ParseMode
+from telegram import InlineKeyboardMarkup
 from utils.translations import get_text
 from utils.user_utils import get_user_language
 

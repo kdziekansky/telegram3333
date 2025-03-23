@@ -4,7 +4,7 @@ from telegram.ext import ContextTypes
 from telegram.constants import ParseMode, ChatAction
 from config import CREDIT_COSTS, DEFAULT_MODEL, CHAT_MODES
 from utils.translations import get_text
-from utils.menu_manager import update_menu_message, store_menu_state  # Dodany import
+from utils.menu_manager import update_menu_message, store_menu_state
 from utils.user_utils import get_user_language, is_chat_initialized, mark_chat_initialized
 from database.supabase_client import (
     get_active_conversation, save_message, get_conversation_history, increment_messages_used
@@ -13,6 +13,7 @@ from database.credits_client import get_user_credits, check_user_credits, deduct
 from utils.openai_client import analyze_image, analyze_document
 from utils.visual_styles import create_header, create_status_indicator
 from utils.credit_warnings import check_operation_cost, format_credit_usage_report
+import datetime
 
 async def handle_buy_credits(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Obsługuje przycisk zakupu kredytów"""
@@ -61,6 +62,9 @@ async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_
             message_text,
             reply_markup
         )
+        
+        # Zapisz stan menu
+        store_menu_state(context, query.from_user.id, 'unknown_callback')
     except Exception as e:
         print(f"Błąd przy edycji wiadomości: {e}")
         # W przypadku błędu, próbujemy wysłać nową wiadomość
@@ -174,11 +178,15 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             ])
             
             # Wyślij nową wiadomość zamiast edytować
-            await context.bot.send_message(
+            message = await context.bot.send_message(
                 chat_id=query.message.chat_id,
                 text=message_text,
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
+            
+            # Zapisz stan menu
+            store_menu_state(context, user_id, 'model_selection', message.message_id)
+            
             return True
         except Exception as e:
             print(f"Błąd przy obsłudze wyboru modelu: {e}")
@@ -211,6 +219,10 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             reply_markup,
             parse_mode=ParseMode.MARKDOWN
         )
+        
+        # Zapisz stan menu
+        store_menu_state(context, user_id, 'language_selection')
+        
         return True
 
     elif query.data == "quick_last_chat":
@@ -395,11 +407,14 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         keyboard = [[InlineKeyboardButton("⬅️ Menu główne", callback_data="menu_back_main")]]
         
         # Wyślij nową wiadomość zamiast edytować istniejącą
-        await context.bot.send_message(
+        message = await context.bot.send_message(
             chat_id=query.message.chat_id,
             text=f"Nieznany przycisk '{query.data}'. Spróbuj ponownie później.",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+        
+        # Zapisz stan menu dla nowej wiadomości
+        store_menu_state(context, user_id, 'unknown_callback', message.message_id)
         
         # Spróbujmy odpowiedzieć na callback, aby usunąć oczekiwanie
         try:
