@@ -8,22 +8,28 @@ import datetime
 import pytz
 import logging
 from matplotlib.dates import DateFormatter
-from database.supabase_client import get_credit_transactions, get_user_credits
+from database.credits_client import get_user_credits
+from utils.translations import get_text
 
 # Dodaję loggera dla lepszej diagnostyki
 logger = logging.getLogger(__name__)
 
-def generate_credit_usage_chart(user_id, days=30):
+async def generate_credit_usage_chart(user_id, days=30, language="pl"):
     """Generuje wykres użycia kredytów w czasie"""
     try:
-        transactions = get_credit_transactions(user_id, days)
+        # Bezpośrednie importy aby uniknąć problemów z importami cyklicznymi
+        from database.supabase_client import get_credit_transactions
+        
+        # Pobierz transakcje - używamy await!
+        transactions = await get_credit_transactions(user_id, days)
         
         if not transactions:
             logger.warning(f"Brak transakcji dla użytkownika {user_id} w okresie {days} dni")
             # Generujemy prosty wykres informacyjny zamiast zwracać None
-            plt.text(0.5, 0.5, get_text("no_transaction_data", language), 
-            horizontalalignment='center', verticalalignment='center', 
-            fontsize=20, color='gray', transform=plt.gca().transAxes)
+            plt.figure(figsize=(10, 6))
+            plt.text(0.5, 0.5, get_text("no_transaction_data", language, default="Brak danych o transakcjach"), 
+                    horizontalalignment='center', verticalalignment='center', 
+                    fontsize=20, color='gray', transform=plt.gca().transAxes)
             
             # Zapisz wykres do bufora
             buf = io.BytesIO()
@@ -43,21 +49,21 @@ def generate_credit_usage_chart(user_id, days=30):
         for trans in transactions:
             try:
                 # Konwersja formatu daty
-                created_at = trans['created_at']
+                created_at = trans.get('created_at')
                 if isinstance(created_at, str):
                     dt = datetime.datetime.fromisoformat(created_at.replace('Z', '+00:00'))
                 else:
                     dt = created_at
                     
                 dates.append(dt)
-                balances.append(trans['credits_after'])
+                balances.append(trans.get('credits_after', 0))
                 
-                if trans['transaction_type'] == 'deduct':
-                    usage_amounts.append(trans['amount'])
+                if trans.get('transaction_type') == 'deduct':
+                    usage_amounts.append(trans.get('amount', 0))
                     purchase_amounts.append(0)
-                elif trans['transaction_type'] in ['add', 'purchase', 'subscription', 'subscription_renewal']:
+                elif trans.get('transaction_type') in ['add', 'purchase', 'subscription', 'subscription_renewal']:
                     usage_amounts.append(0)
-                    purchase_amounts.append(trans['amount'])
+                    purchase_amounts.append(trans.get('amount', 0))
             except Exception as e:
                 logger.error(f"Błąd przy przetwarzaniu transakcji: {e}", exc_info=True)
         
@@ -65,7 +71,7 @@ def generate_credit_usage_chart(user_id, days=30):
             logger.warning(f"Nie udało się przetworzyć żadnej transakcji")
             # Generujemy prosty wykres informacyjny
             plt.figure(figsize=(10, 6))
-            plt.text(0.5, 0.5, get_text("transaction_processing_error", language), 
+            plt.text(0.5, 0.5, get_text("transaction_processing_error", language, default="Błąd przetwarzania transakcji"), 
                     horizontalalignment='center', verticalalignment='center', 
                     fontsize=20, color='gray', transform=plt.gca().transAxes)
             plt.gca().set_axis_off()
@@ -82,9 +88,9 @@ def generate_credit_usage_chart(user_id, days=30):
         # Wykres salda
         plt.subplot(2, 1, 1)
         plt.plot(dates, balances, 'b-', label='Saldo kredytów')
-        plt.xlabel(get_text("date", language))
-        plt.ylabel(get_text("credits", language))
-        plt.title(get_text("credit_balance_history", language))
+        plt.xlabel(get_text("date", language, default="Data"))
+        plt.ylabel(get_text("credits", language, default="Kredyty"))
+        plt.title(get_text("credit_balance_history", language, default="Historia salda kredytów"))
         plt.grid(True, linestyle='--', alpha=0.7)
         plt.gca().xaxis.set_major_formatter(DateFormatter('%d-%m-%Y'))
         plt.gcf().autofmt_xdate()
@@ -108,9 +114,9 @@ def generate_credit_usage_chart(user_id, days=30):
         plt.gcf().autofmt_xdate()
         
         # Etykiety i legenda
-        plt.xlabel(get_text("date", language))
-        plt.ylabel(get_text("credits", language))
-        plt.title(get_text("transaction_details", language))
+        plt.xlabel(get_text("date", language, default="Data"))
+        plt.ylabel(get_text("credits", language, default="Kredyty"))
+        plt.title(get_text("transaction_details", language, default="Szczegóły transakcji"))
         plt.grid(True, linestyle='--', alpha=0.7)
         plt.legend()
         
@@ -129,7 +135,7 @@ def generate_credit_usage_chart(user_id, days=30):
         logger.error(f"Błąd przy generowaniu wykresu: {e}", exc_info=True)
         # Generujemy wykres błędu
         plt.figure(figsize=(10, 6))
-        plt.text(0.5, 0.5, get_text("chart_generation_error", language, error=str(e)), 
+        plt.text(0.5, 0.5, get_text("chart_generation_error", language, error=str(e), default=f"Błąd generowania wykresu: {str(e)}"), 
                 horizontalalignment='center', verticalalignment='center', 
                 fontsize=12, color='red', transform=plt.gca().transAxes)
         plt.gca().set_axis_off()
@@ -141,21 +147,36 @@ def generate_credit_usage_chart(user_id, days=30):
         plt.close()
         return buf
 
-def get_credit_usage_breakdown(user_id, days=30):
+async def get_credit_usage_breakdown(user_id, days=30, language="pl"):
     """Pobiera rozkład zużycia kredytów według rodzaju operacji z dodatkową obsługą błędów"""
     try:
+        # Bezpośredni import, aby uniknąć problemów z importami cyklicznymi
         from database.supabase_client import get_credit_usage_by_type
-        breakdown = get_credit_usage_by_type(user_id, days)
+        
+        # Używamy await!
+        breakdown = await get_credit_usage_by_type(user_id, days)
         
         # Jeśli brak kategorii, stwórz podstawowy rozkład
         if not breakdown:
             logger.warning(f"Brak danych rozkładu dla użytkownika {user_id} - wykorzystujemy dane transakcji")
-            transactions = get_credit_transactions(user_id, days)
+            
+            # Bezpośredni import, aby uniknąć problemów z importami cyklicznymi
+            from database.supabase_client import get_credit_transactions
+            
+            # Używamy await!
+            transactions = await get_credit_transactions(user_id, days)
+            
+            # Nazwy kategorii w odpowiednim języku
+            messages_category = get_text("messages_category", language, default="Wiadomości")
+            images_category = get_text("images_category", language, default="Obrazy")
+            documents_category = get_text("documents_category", language, default="Dokumenty")
+            photos_category = get_text("photos_category", language, default="Zdjęcia")
+            other_category = get_text("other_category", language, default="Inne")
             
             # Ręczna kategoryzacja
-            breakdown = {"Inne": 0}
+            breakdown = {other_category: 0}
             for trans in transactions:
-                if trans['transaction_type'] != 'deduct':
+                if trans.get('transaction_type') != 'deduct':
                     continue
                     
                 description = trans.get('description', '').lower()
@@ -178,26 +199,26 @@ def get_credit_usage_breakdown(user_id, days=30):
                         breakdown[photos_category] = 0
                     breakdown[photos_category] += amount
                 else:
-                    if other_category not in breakdown:
-                        breakdown[other_category] = 0
                     breakdown[other_category] += amount
         
         return breakdown
     except Exception as e:
         logger.error(f"Błąd przy pobieraniu rozkładu zużycia: {e}", exc_info=True)
         # Zwracamy prosty słownik w przypadku błędu
-        return {"Błąd analizy": 1}
+        error_category = get_text("error_category", language, default="Błąd analizy")
+        return {error_category: 1}
 
-def generate_usage_breakdown_chart(user_id, days=30):
+async def generate_usage_breakdown_chart(user_id, days=30, language="pl"):
     """Generuje wykres kołowy rozkładu zużycia kredytów z lepszą obsługą błędów"""
     try:
-        usage_breakdown = get_credit_usage_breakdown(user_id, days)
+        # Używamy await!
+        usage_breakdown = await get_credit_usage_breakdown(user_id, days, language)
         
         if not usage_breakdown:
             logger.warning(f"Brak danych rozkładu dla użytkownika {user_id}")
             # Generujemy prosty wykres informacyjny zamiast zwracać None
             plt.figure(figsize=(8, 6))
-            plt.text(0.5, 0.5, get_text("no_analysis_data", language), 
+            plt.text(0.5, 0.5, get_text("no_analysis_data", language, default="Brak danych do analizy"), 
                     horizontalalignment='center', verticalalignment='center', 
                     fontsize=20, color='gray', transform=plt.gca().transAxes)
 
@@ -221,9 +242,9 @@ def generate_usage_breakdown_chart(user_id, days=30):
         if sum(sizes) > 0:  # Sprawdź, czy są dane do wykreślenia
             plt.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90, shadow=True)
             plt.axis('equal')
-            plt.title(get_text("credit_usage_breakdown_days", language, days=days))
+            plt.title(get_text("credit_usage_breakdown_days", language, days=days, default=f"Rozkład wykorzystania kredytów ({days} dni)"))
         else:
-            plt.text(0.5, 0.5, get_text("no_credit_usage_transactions", language), 
+            plt.text(0.5, 0.5, get_text("no_credit_usage_transactions", language, default="Brak transakcji wydatkowych"), 
                     horizontalalignment='center', verticalalignment='center', 
                     fontsize=16, color='gray', transform=plt.gca().transAxes)
             plt.gca().set_axis_off()
@@ -240,7 +261,7 @@ def generate_usage_breakdown_chart(user_id, days=30):
         logger.error(f"Błąd przy generowaniu wykresu rozkładu: {e}", exc_info=True)
         # Generujemy wykres błędu
         plt.figure(figsize=(8, 6))
-        plt.text(0.5, 0.5, get_text("chart_generation_error", language, error=str(e)), 
+        plt.text(0.5, 0.5, get_text("chart_generation_error", language, error=str(e), default=f"Błąd generowania wykresu: {str(e)}"), 
                 horizontalalignment='center', verticalalignment='center', 
                 fontsize=12, color='red', transform=plt.gca().transAxes)
         plt.gca().set_axis_off()
@@ -252,10 +273,14 @@ def generate_usage_breakdown_chart(user_id, days=30):
         plt.close()
         return buf
 
-def predict_credit_depletion(user_id, days=30):
+async def predict_credit_depletion(user_id, days=30, language="pl"):
     """Przewiduje, kiedy skończą się kredyty użytkownika z ulepszoną logiką"""
     try:
-        transactions = get_credit_transactions(user_id, days)
+        # Bezpośredni import, aby uniknąć problemów z importami cyklicznymi
+        from database.supabase_client import get_credit_transactions
+        
+        # Używamy await!
+        transactions = await get_credit_transactions(user_id, days)
         current_balance = get_user_credits(user_id)
         
         # Poprawiono logikę sprawdzania danych

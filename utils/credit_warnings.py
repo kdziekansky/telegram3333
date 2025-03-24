@@ -1,5 +1,6 @@
 from utils.translations import get_text
 from utils.user_utils import get_user_language
+from config import CREDIT_PACKAGES
 
 # utils/credit_warnings.py
 """
@@ -23,6 +24,9 @@ def check_operation_cost(user_id, cost, current_credits, operation_name, context
             - message: Warning message
             - require_confirmation: Whether to require confirmation
     """
+    # Pobierz język użytkownika
+    language = get_user_language(context, user_id)
+    
     # Initialize user data if needed
     if 'user_data' not in context.chat_data:
         context.chat_data['user_data'] = {}
@@ -78,13 +82,14 @@ def check_operation_cost(user_id, cost, current_credits, operation_name, context
         'require_confirmation': require_confirmation
     }
 
-def get_low_credits_notification(credits, threshold=10):
+def get_low_credits_notification(credits, threshold=10, language="pl"):
     """
     Returns a notification message for low credits if credits are below threshold
     
     Args:
         credits (int): Current credits
         threshold (int): Threshold for low credits warning
+        language (str): Language code
         
     Returns:
         str or None: Notification message or None if credits are above threshold
@@ -96,7 +101,7 @@ def get_low_credits_notification(credits, threshold=10):
     else:
         return None
 
-def format_credit_usage_report(operation, cost, credits_before, credits_after):
+def format_credit_usage_report(operation, cost, credits_before, credits_after, language="pl"):
     """
     Formats a credit usage report after an operation
     
@@ -105,6 +110,7 @@ def format_credit_usage_report(operation, cost, credits_before, credits_after):
         cost (int): Operation cost
         credits_before (int): Credits before operation
         credits_after (int): Credits after operation
+        language (str): Language code
         
     Returns:
         str: Formatted credit usage report
@@ -122,6 +128,9 @@ def get_credit_recommendation(user_id, context):
     Returns:
         dict or None: Recommendation with package_id and reason, or None if no recommendation
     """
+    # Get language
+    language = get_user_language(context, user_id)
+    
     # Get credit usage history from context or database
     from database.credits_client import get_user_credit_stats
     stats = get_user_credit_stats(user_id)
@@ -144,9 +153,6 @@ def get_credit_recommendation(user_id, context):
         days = max(1, len(history) // 2)  # Rough estimate
     
     daily_usage = total_usage / days
-    
-    # Get available packages
-    from config import CREDIT_PACKAGES
     
     # Find the best package based on usage
     monthly_usage = daily_usage * 30

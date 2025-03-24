@@ -220,12 +220,11 @@ async def new_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         base_message = "✅ Utworzono nową rozmowę. Możesz zacząć pisać! "  # Ujednolicony komunikat
         model_info = f"Używasz modelu {model_name} za {credit_cost} kredyt(ów) za wiadomość"
         
-        # Tylko jeden przycisk - wybór modelu
         keyboard = [
-            [InlineKeyboardButton("🤖 Wybierz model czatu", callback_data="settings_model")]
+            [InlineKeyboardButton("🤖 Wybierz model czatu", callback_data="menu_section_settings")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        
+
         await update.message.reply_text(
             base_message + model_info,
             parse_mode=ParseMode.MARKDOWN,

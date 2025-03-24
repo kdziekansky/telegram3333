@@ -1,151 +1,83 @@
-"""
-Moduł do zarządzania kredytami użytkowników - adapter dla Supabase
-Przekierowuje wszystkie wywołania do implementacji Supabase
-"""
+# database/credits_client.py
+from services.api_service import APIService
+from services.repository_service import RepositoryService
 import logging
-from database.supabase_client import (
-    get_user_credits as supabase_get_user_credits,
-    add_user_credits as supabase_add_user_credits,
-    deduct_user_credits as supabase_deduct_user_credits,
-    check_user_credits as supabase_check_user_credits,
-    get_credit_packages as supabase_get_credit_packages,
-    get_package_by_id as supabase_get_package_by_id,
-    purchase_credits as supabase_purchase_credits,
-    get_user_credit_stats as supabase_get_user_credit_stats,
-    add_stars_payment_option as supabase_add_stars_payment_option
-)
 
 logger = logging.getLogger(__name__)
 
-# Ścieżka do pliku bazy danych - zachowana dla kompatybilności
-DB_PATH = "bot_database.sqlite"
+# Utworzenie globalnych instancji
+api_service = APIService()
+repository_service = RepositoryService(api_service.supabase)
 
+# Funkcje dla kompatybilności wstecznej
 def get_user_credits(user_id):
-    """
-    Pobiera liczbę kredytów użytkownika
-    
-    Args:
-        user_id (int): ID użytkownika
-    
-    Returns:
-        int: Liczba kredytów lub 0, jeśli nie znaleziono
-    """
-    return supabase_get_user_credits(user_id)
+    """Funkcja dla kompatybilności wstecznej - bez async/await"""
+    try:
+        # Bezpośrednie zapytanie do Supabase
+        response = api_service.supabase.client.table('user_credits').select('credits_amount').eq('user_id', user_id).execute()
+        
+        if response.data:
+            return response.data[0].get('credits_amount', 100)  # Domyślnie 100 kredytów
+        
+        # Inicjalizacja nowego użytkownika
+        api_service.supabase.client.table('user_credits').insert({
+            'user_id': user_id,
+            'credits_amount': 100,  # Każdy nowy użytkownik dostaje 100 kredytów
+            'total_credits_purchased': 0,
+            'total_spent': 0
+        }).execute()
+        
+        return 100  # Początkowa liczba kredytów
+    except Exception as e:
+        logger.error(f"Błąd przy pobieraniu kredytów: {e}")
+        return 100  # W razie błędu również zwróć 100
 
-def add_user_credits(user_id, amount, description=None):
-    """
-    Dodaje kredyty do konta użytkownika
-    
-    Args:
-        user_id (int): ID użytkownika
-        amount (int): Liczba kredytów do dodania
-        description (str, optional): Opis transakcji
-    
-    Returns:
-        bool: True jeśli operacja się powiodła, False w przeciwnym razie
-    """
-    return supabase_add_user_credits(user_id, amount, description)
+async def add_user_credits(user_id, amount, description=None):
+    """Funkcja dla kompatybilności wstecznej"""
+    return await repository_service.credit_repository.add_user_credits(user_id, amount, description)
 
-def deduct_user_credits(user_id, amount, description=None):
-    """
-    Odejmuje kredyty z konta użytkownika
-    
-    Args:
-        user_id (int): ID użytkownika
-        amount (int): Liczba kredytów do odjęcia
-        description (str, optional): Opis transakcji
-    
-    Returns:
-        bool: True jeśli operacja się powiodła, False w przeciwnym razie
-    """
-    return supabase_deduct_user_credits(user_id, amount, description)
+async def deduct_user_credits(user_id, amount, description=None):
+    """Funkcja dla kompatybilności wstecznej"""
+    return await repository_service.credit_repository.deduct_user_credits(user_id, amount, description)
 
-def check_user_credits(user_id, amount_needed):
-    """
-    Sprawdza, czy użytkownik ma wystarczającą liczbę kredytów
-    
-    Args:
-        user_id (int): ID użytkownika
-        amount_needed (int): Wymagana liczba kredytów
-    
-    Returns:
-        bool: True jeśli użytkownik ma wystarczającą liczbę kredytów, False w przeciwnym razie
-    """
-    return supabase_check_user_credits(user_id, amount_needed)
+async def check_user_credits(user_id, amount_needed):
+    """Funkcja dla kompatybilności wstecznej"""
+    return await repository_service.credit_repository.check_user_credits(user_id, amount_needed)
 
-def get_credit_packages():
-    """
-    Pobiera dostępne pakiety kredytów
-    
-    Returns:
-        list: Lista słowników z informacjami o pakietach lub pusta lista w przypadku błędu
-    """
-    return supabase_get_credit_packages()
+async def get_credit_packages():
+    """Funkcja dla kompatybilności wstecznej"""
+    return await repository_service.credit_repository.get_credit_packages()
 
-def get_package_by_id(package_id):
-    """
-    Pobiera informacje o pakiecie kredytów
-    
-    Args:
-        package_id (int): ID pakietu
-    
-    Returns:
-        dict: Słownik z informacjami o pakiecie lub None w przypadku błędu
-    """
-    return supabase_get_package_by_id(package_id)
+async def get_package_by_id(package_id):
+    """Funkcja dla kompatybilności wstecznej"""
+    return await repository_service.credit_repository.get_package_by_id(package_id)
 
-def purchase_credits(user_id, package_id):
-    """
-    Dokonuje zakupu kredytów
-    
-    Args:
-        user_id (int): ID użytkownika
-        package_id (int): ID pakietu
-    
-    Returns:
-        tuple: (success, package) gdzie success to bool, a package to słownik z informacjami o pakiecie
-    """
-    return supabase_purchase_credits(user_id, package_id)
+async def purchase_credits(user_id, package_id):
+    """Funkcja dla kompatybilności wstecznej"""
+    return await repository_service.credit_repository.purchase_credits(user_id, package_id)
 
-def get_user_credit_stats(user_id):
-    """
-    Pobiera statystyki kredytów użytkownika
-    
-    Args:
-        user_id (int): ID użytkownika
-    
-    Returns:
-        dict: Słownik z informacjami o kredytach użytkownika
-    """
-    return supabase_get_user_credit_stats(user_id)
+async def get_user_credit_stats(user_id):
+    """Funkcja dla kompatybilności wstecznej"""
+    return await repository_service.credit_repository.get_user_stats(user_id)
 
-def add_stars_payment_option(user_id, stars_amount, credits_amount, description=None):
-    """
-    Dodaje kredyty do konta użytkownika za płatność gwiazdkami
-    
-    Args:
-        user_id (int): ID użytkownika
-        stars_amount (int): Liczba gwiazdek
-        credits_amount (int): Liczba kredytów do dodania
-        description (str, optional): Opis transakcji
-    
-    Returns:
-        bool: True jeśli operacja się powiodła, False w przeciwnym razie
-    """
-    return supabase_add_stars_payment_option(user_id, stars_amount, credits_amount, description)
+async def get_credit_transactions(user_id, days=30):
+    """Funkcja dla kompatybilności wstecznej"""
+    return await repository_service.credit_repository.get_transactions(user_id, days)
 
-def get_stars_conversion_rate():
-    """
-    Pobiera aktualny kurs wymiany gwiazdek na kredyty
-    
-    Returns:
-        dict: Słownik z kursami wymiany dla różnych ilości gwiazdek
-    """
-    # Ta funkcja nie ma odpowiednika w supabase_client.py, więc zachowujemy oryginalną implementację
-    return {
-        1: 10,    # 1 gwiazdka = 10 kredytów
-        5: 55,    # 5 gwiazdek = 55 kredytów (10% bonus)
-        10: 120,  # 10 gwiazdek = 120 kredytów (20% bonus)
-        25: 325,  # 25 gwiazdek = 325 kredytów (30% bonus)
-        50: 700   # 50 gwiazdek = 700 kredytów (40% bonus)
-    }
+async def get_credit_usage_by_type(user_id, days=30):
+    """Funkcja dla kompatybilności wstecznej"""
+    return await repository_service.credit_repository.get_usage_by_type(user_id, days)
+
+async def add_stars_payment_option(stars_count, credits_amount):
+    """Funkcja dla kompatybilności wstecznej"""
+    # Ta funkcja może nie mieć bezpośredniego odpowiednika w repository
+    # Można zaimplementować ją później w miarę potrzeby
+    logger.warning("Funkcja add_stars_payment_option nie jest zaimplementowana")
+    return False
+
+async def get_stars_conversion_rate():
+    """Funkcja dla kompatybilności wstecznej"""
+    # Ta funkcja może nie mieć bezpośredniego odpowiednika w repository
+    # Można zaimplementować ją później w miarę potrzeby
+    logger.warning("Funkcja get_stars_conversion_rate nie jest zaimplementowana")
+    return {}

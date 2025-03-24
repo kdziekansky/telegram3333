@@ -4,7 +4,7 @@ from telegram.constants import ParseMode
 from config import BOT_NAME
 from utils.translations import get_text
 from utils.user_utils import get_user_language
-from utils.menu_manager import update_menu_message, store_menu_state
+from handlers.menu_handler import store_menu_state
 
 def get_onboarding_image_url(step_name):
     """
@@ -102,7 +102,7 @@ async def handle_onboarding_callback(update: Update, context: ContextTypes.DEFAU
     # Pobierz aktualny stan onboardingu
     current_step = context.chat_data['user_data'][user_id]['onboarding_state']
     
-    # Lista kroków onboardingu
+    # Lista kroków onboardingu - USUNIĘTE NIEDZIAŁAJĄCE FUNKCJE
     steps = [
         'welcome', 'chat', 'modes', 'images', 'analysis', 
         'credits', 'referral', 'export', 'settings', 'finish'
@@ -124,7 +124,7 @@ async def handle_onboarding_callback(update: Update, context: ContextTypes.DEFAU
         if 'onboarding_state' in context.chat_data['user_data'][user_id]:
             del context.chat_data['user_data'][user_id]['onboarding_state']
         
-        # Wyślij powitalną wiadomość bez formatowania Markdown
+        # NAPRAWIONE: Wyślij powitalną wiadomość bez formatowania Markdown
         welcome_text = get_text("welcome_message", language, bot_name=BOT_NAME)
         # Usuń potencjalnie problematyczne znaki formatowania
         welcome_text = welcome_text.replace("*", "").replace("_", "").replace("`", "").replace("[", "").replace("]", "")

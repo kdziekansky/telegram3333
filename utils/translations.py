@@ -110,7 +110,7 @@ translations = {
         "settings_language": "🌐 Język",
         "settings_name": "👤 Twoja nazwa",
         "settings_choose_model": "Wybierz model AI, którego chcesz używać:",
-        "settings_choose_language": "*Wybór języka*\n\nWybierz język interfejsu:",
+        "settings_choose_language": "*Wybór języka*\n\nWybierz preferowany przez Ciebie język interfejsu, cały bot będzie działał w tym języku.",
         "settings_change_name": "*Zmiana nazwy*\n\nWpisz komendę /setname [twoja_nazwa] aby zmienić swoją nazwę w bocie.",
         
         # Do rozpoczynania i zarządzania czatem
@@ -577,7 +577,7 @@ translations = {
         "settings_language": "🌐 Language",
         "settings_name": "👤 Your Name",
         "settings_choose_model": "Choose the AI model you want to use:",
-        "settings_choose_language": "*Language Selection*\n\nSelect interface language:",
+        "settings_choose_language": "*Language Selection*\n\nSelect your preferred interface language, the entire bot will run in that language.",
         "settings_change_name": "*Change Name*\n\nType the command /setname [your_name] to change your name in the bot.",
         
         # Do rozpoczynania i zarządzania czatem
@@ -1043,7 +1043,7 @@ translations = {
         "settings_language": "🌐 Язык",
         "settings_name": "👤 Ваше имя",
         "settings_choose_model": "Выберите модель ИИ, которую вы хотите использовать:",
-        "settings_choose_language": "*Выбор языка*\n\nВыберите язык интерфейса:",
+        "settings_choose_language": "*Выбор языка*\n\nВыберите предпочтительный язык интерфейса - весь бот будет работать на этом языке.:",
         "settings_change_name": "*Изменение имени*\n\nВведите команду /setname [ваше_имя], чтобы изменить свое имя в боте.",
         
         # Do rozpoczynania i zarządzania czatem

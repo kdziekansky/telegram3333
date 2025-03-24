@@ -20,8 +20,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_message = update.message.text
     language = get_user_language(context, user_id)
     
-    print(f"Otrzymano wiadomość od użytkownika {user_id}: {user_message}")
-    
     # Sprawdź, czy użytkownik zainicjował czat
     if not is_chat_initialized(context, user_id):
         # Enhanced UI for chat initialization prompt
@@ -54,8 +52,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if 'current_mode' in user_data and user_data['current_mode'] in CHAT_MODES:
             current_mode = user_data['current_mode']
             credit_cost = CHAT_MODES[current_mode]["credit_cost"]
-    
-    print(f"Tryb: {current_mode}, koszt kredytów: {credit_cost}")
     
     # Get current credits
     credits = get_user_credits(user_id)
@@ -129,18 +125,15 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         conversation = get_active_conversation(user_id)
         conversation_id = conversation['id']
-        print(f"Aktywna konwersacja: {conversation_id}")
     except Exception as e:
-        print(f"Błąd przy pobieraniu konwersacji: {e}")
         await update.message.reply_text(get_text("conversation_error", language))
         return
     
     # Zapisz wiadomość użytkownika do bazy danych
     try:
         save_message(conversation_id, user_id, user_message, is_from_user=True)
-        print("Wiadomość użytkownika zapisana w bazie")
     except Exception as e:
-        print(f"Błąd przy zapisie wiadomości użytkownika: {e}")
+        pass
     
     # Wyślij informację, że bot pisze
     await update.message.chat.send_action(action=ChatAction.TYPING)
@@ -148,9 +141,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Pobierz historię konwersacji
     try:
         history = get_conversation_history(conversation_id, limit=MAX_CONTEXT_MESSAGES)
-        print(f"Pobrano historię konwersacji, liczba wiadomości: {len(history)}")
     except Exception as e:
-        print(f"Błąd przy pobieraniu historii: {e}")
         history = []
     
     # Określ model do użycia - domyślny lub z trybu czatu
@@ -164,14 +155,11 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Aktualizuj koszt kredytów na podstawie modelu
             credit_cost = CREDIT_COSTS["message"].get(model_to_use, CREDIT_COSTS["message"]["default"])
     
-    print(f"Używany model: {model_to_use}")
-    
     # Przygotuj system prompt z wybranego trybu
     system_prompt = CHAT_MODES[current_mode]["prompt"]
     
     # Przygotuj wiadomości dla API OpenAI
     messages = prepare_messages_from_history(history, user_message, system_prompt)
-    print(f"Przygotowano {len(messages)} wiadomości dla API")
     
     # Wyślij początkową pustą wiadomość, którą będziemy aktualizować
     response_message = await update.message.reply_text(get_text("generating_response", language))
@@ -183,7 +171,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Spróbuj wygenerować odpowiedź
     try:
-        print("Rozpoczynam generowanie odpowiedzi strumieniowej...")
         # Generuj odpowiedź strumieniowo
         async for chunk in chat_completion_stream(messages, model=model_to_use):
             full_response += chunk
@@ -198,17 +185,12 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     buffer = ""
                     last_update = current_time
                 except Exception as e:
-                    # Jeśli wystąpi błąd (np. wiadomość nie została zmieniona), kontynuuj
-                    print(f"Błąd przy aktualizacji wiadomości: {e}")
-        
-        print("Zakończono generowanie odpowiedzi")
+                    pass
         
         # Aktualizuj wiadomość z pełną odpowiedzią bez kursora
         try:
             await response_message.edit_text(full_response, parse_mode=ParseMode.MARKDOWN)
         except Exception as e:
-            # Jeśli wystąpi błąd formatowania Markdown, wyślij bez formatowania
-            print(f"Błąd formatowania Markdown: {e}")
             await response_message.edit_text(full_response)
         
         # Zapisz odpowiedź do bazy danych
@@ -216,9 +198,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Odejmij kredyty
         deduct_user_credits(user_id, credit_cost, get_text("message_model", language, model=model_to_use, default=f"Wiadomość ({model_to_use})"))
-        print(f"Odjęto {credit_cost} kredytów za wiadomość")
     except Exception as e:
-        print(f"Wystąpił błąd podczas generowania odpowiedzi: {e}")
         await response_message.edit_text(get_text("response_error", language, error=str(e)))
         return
     

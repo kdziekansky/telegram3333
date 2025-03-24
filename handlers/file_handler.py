@@ -1,409 +1,298 @@
-# handlers/file_handler.py - skonwertowany
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update
+from utils.translations import get_text
+from handlers.menu_handler import get_user_language
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode, ChatAction
-from config import CREDIT_COSTS
-from utils.translations import get_text
-from utils.openai_client import analyze_document, analyze_image
-from utils.tips import get_random_tip, should_show_tip
-from utils.visual_styles import create_header, create_section, create_status_indicator
-from handlers.base_handler import BaseHandler
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from database.supabase_client import check_active_subscription
+from utils.openai_client import analyze_document, analyze_image
+from utils.ui_elements import info_card, section_divider, feature_badge, progress_bar
+from utils.visual_styles import style_message, create_header, create_section, create_status_indicator
+from utils.tips import get_random_tip, should_show_tip
+from utils.credit_warnings import check_operation_cost, format_credit_usage_report
+from database.credits_client import check_user_credits, deduct_user_credits, get_user_credits
+from config import CREDIT_COSTS
 
-class FileHandler(BaseHandler):
-    """
-    Handler do obsługi plików (dokumentów i zdjęć)
-    """
+async def _check_file_prerequisites(update, context, file_type, file_size_limit=25*1024*1024):
+    """Common prerequisites check for both document and photo handlers"""
+    user_id = update.effective_user.id
+    language = get_user_language(context, user_id)
     
-    @staticmethod
-    async def _analyze_document_operation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """
-        Faktyczna operacja analizy dokumentu - wydzielona do osobnej metody
-        """
-        user_id = update.effective_user.id
-        document = update.message.document
-        file_name = document.file_name
+    # Check subscription
+    if not check_active_subscription(user_id):
+        message = create_header("Subskrypcja wygasła", "warning") + \
+                 "Twoja subskrypcja wygasła lub nie masz wystarczającej liczby kredytów, aby wykonać tę operację."
         
-        # Pobierz plik
-        file = await context.bot.get_file(document.file_id)
+        keyboard = [
+            [InlineKeyboardButton("💳 " + get_text("buy_credits_btn", language), callback_data="menu_credits_buy")],
+            [InlineKeyboardButton("⬅️ " + get_text("back", language, default="Powrót"), callback_data="menu_back_main")]
+        ]
+        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
+        return False
+    
+    # Check size limit for documents
+    if hasattr(update.message, 'document') and update.message.document and update.message.document.file_size > file_size_limit:
+        error_message = create_header("Plik zbyt duży", "error") + \
+                       f"Maksymalny rozmiar pliku to {file_size_limit/(1024*1024):.1f}MB. Twój plik ma " + \
+                       f"{update.message.document.file_size/(1024*1024):.1f}MB."
+        await update.message.reply_text(error_message, parse_mode=ParseMode.MARKDOWN)
+        return False
+    
+    # Check credits
+    credit_cost = CREDIT_COSTS[file_type]
+    credits = get_user_credits(user_id)
+    
+    if not check_user_credits(user_id, credit_cost):
+        warning_message = create_header("Brak wystarczających kredytów", "warning") + \
+                         f"Nie masz wystarczającej liczby kredytów.\n\n" + \
+                         f"▪️ Koszt operacji: *{credit_cost}* kredytów\n" + \
+                         f"▪️ Twój stan kredytów: *{credits}* kredytów"
+        
+        keyboard = [
+            [InlineKeyboardButton("💳 " + get_text("buy_credits_btn", language), callback_data="menu_credits_buy")],
+            [InlineKeyboardButton("⬅️ " + get_text("back", language, default="Powrót"), callback_data="menu_back_main")]
+        ]
+        await update.message.reply_text(warning_message, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
+        return False
+    
+    return True
+
+async def _handle_file_analysis(update, context, file_id, file_name, file_type, operation_name, 
+                              analyze_func, credit_cost, mode="analyze", target_language=None):
+    """Common function for handling file analysis with appropriate UI and credit management"""
+    user_id = update.effective_user.id
+    language = get_user_language(context, user_id)
+    
+    # Initial loading message
+    message = await update.message.reply_text(
+        create_status_indicator('loading', operation_name) + "\n\n" +
+        (f"*Dokument:* {file_name}" if file_type == "document" else "")
+    )
+    
+    await update.message.chat.send_action(action=ChatAction.TYPING)
+    
+    credits_before = get_user_credits(user_id)
+    
+    try:
+        file = await context.bot.get_file(file_id)
         file_bytes = await file.download_as_bytearray()
         
-        # Analizuj plik
-        analysis = await analyze_document(file_bytes, file_name)
+        if file_type == "document":
+            result = await analyze_document(file_bytes, file_name, mode, target_language)
+        else:  # photo
+            result = await analyze_image(file_bytes, f"photo_{file_id}.jpg", mode, target_language)
         
-        # Zwróć wyniki analizy
-        return {
-            "analysis": analysis,
-            "file_name": file_name
-        }
-    
-    @staticmethod
-    async def _analyze_photo_operation(update: Update, context: ContextTypes.DEFAULT_TYPE, mode="analyze"):
-        """
-        Faktyczna operacja analizy zdjęcia - wydzielona do osobnej metody
+        deduct_user_credits(user_id, credit_cost, f"{operation_name}: {file_name if file_type == 'document' else ''}")
         
-        Args:
-            update: Obiekt Update
-            context: Kontekst bota
-            mode: Tryb analizy ("analyze" lub "translate")
+        credits_after = get_user_credits(user_id)
+        
+        # Prepare result message with appropriate header
+        if mode == "translate":
+            result_message = create_header("Tłumaczenie tekstu", "translation")
+        elif file_type == "document":
+            result_message = create_header(f"Analiza dokumentu: {file_name}", "document")
+        else:
+            result_message = create_header("Analiza zdjęcia", "analysis")
+        
+        # Handle long responses
+        if file_type == "document" and len(result) > 3000:
+            result = result[:3000] + "...\n\n(Analiza została skrócona ze względu na długość)"
             
-        Returns:
-            dict: Wyniki analizy
-        """
-        # Wybierz zdjęcie o najwyższej rozdzielczości
-        photo = update.message.photo[-1]
+        result_message += result
         
-        # Pobierz zdjęcie
-        file = await context.bot.get_file(photo.file_id)
-        file_bytes = await file.download_as_bytearray()
+        # Add usage report
+        usage_report = format_credit_usage_report(operation_name, credit_cost, credits_before, credits_after)
+        result_message += f"\n\n{usage_report}"
         
-        # Analizuj zdjęcie w odpowiednim trybie
-        result = await analyze_image(file_bytes, f"photo_{photo.file_unique_id}.jpg", mode=mode)
-        
-        # Zwróć wyniki analizy
-        return {
-            "result": result,
-            "mode": mode,
-            "photo_id": photo.file_id
-        }
-    
-    @staticmethod
-    async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """
-        Obsługa przesłanych dokumentów z ulepszoną prezentacją
-        """
-        user_id = update.effective_user.id
-        language = FileHandler.get_user_language(context, user_id)
-        document = update.message.document
-        file_name = document.file_name
-        
-        # Sprawdź, czy użytkownik ma aktywną subskrypcję
-        if not check_active_subscription(user_id):
-            keyboard = [
-                [InlineKeyboardButton("💳 " + get_text("buy_credits_btn", language), callback_data="menu_credits_buy")],
-                [InlineKeyboardButton("⬅️ " + get_text("back", language, default="Powrót"), callback_data="menu_back_main")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await FileHandler.send_error(
-                update,
-                context,
-                get_text("subscription_expired_message", language, default="Twoja subskrypcja wygasła lub nie masz wystarczającej liczby kredytów, aby wykonać tę operację. Kup pakiet kredytów, aby kontynuować."),
-                show_back_button=False
-            )
-            return
-        
-        # Sprawdź rozmiar pliku (limit 25MB)
-        if document.file_size > 25 * 1024 * 1024:
-            file_size_mb = document.file_size / (1024 * 1024)
-            error_message = get_text(
-                "file_too_large", 
-                language, 
-                size=f"{file_size_mb:.1f}", 
-                default=f"Maksymalny rozmiar pliku to 25MB. Twój plik ma {file_size_mb:.1f}MB. Spróbuj zmniejszyć rozmiar pliku lub podzielić go na mniejsze części."
-            )
-            
-            await FileHandler.send_error(update, context, error_message)
-            return
-        
-        # Sprawdź podpis, aby określić rodzaj operacji
-        caption = update.message.caption or ""
-        caption_lower = caption.lower()
-        is_pdf = file_name.lower().endswith('.pdf')
-        
-        # Jeśli plik to PDF i użytkownik wspomina o tłumaczeniu, pokaż opcje
-        if is_pdf and any(word in caption_lower for word in ["tłumacz", "przetłumacz", "translate", "переводить"]):
-            options_message = (
-                f"Wykryto dokument PDF: *{file_name}*\n\n"
-                f"Wybierz co chcesz zrobić z tym dokumentem:"
-            )
-            
-            # Pokaż koszty operacji
-            options_message += "\n\n" + create_section("Koszt operacji", 
-                f"▪️ Analiza dokumentu: *{CREDIT_COSTS['document']}* kredytów\n"
-                f"▪️ Tłumaczenie dokumentu: *8* kredytów")
-            
-            # Dodaj poradę, jeśli potrzebna
-            if should_show_tip(user_id, context):
-                tip = get_random_tip('document')
-                options_message += f"\n\n💡 *Porada:* {tip}"
-            
-            # Przyciski operacji
-            keyboard = [
-                [
-                    InlineKeyboardButton("📝 Analiza dokumentu", callback_data="analyze_document"),
-                    InlineKeyboardButton("🔤 Tłumaczenie dokumentu", callback_data="translate_document")
-                ],
-                [
-                    InlineKeyboardButton("❌ Anuluj", callback_data="cancel_operation")
-                ]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await FileHandler.send_message(
-                update,
-                context,
-                options_message,
-                reply_markup=reply_markup,
-                category="document"
-            )
-            
-            # Zapisz informacje o dokumencie w kontekście
-            if 'user_data' not in context.chat_data:
-                context.chat_data['user_data'] = {}
-            if user_id not in context.chat_data['user_data']:
-                context.chat_data['user_data'][user_id] = {}
-                
-            context.chat_data['user_data'][user_id]['last_document_id'] = document.file_id
-            context.chat_data['user_data'][user_id]['last_document_name'] = file_name
-            
-            return
-        
-        # Standardowa analiza dokumentu
-        credit_cost = CREDIT_COSTS["document"]
-        
-        # Uruchom operację z obsługą kredytów
-        result = await FileHandler.process_operation_with_credits(
-            update,
-            context,
-            credit_cost,
-            "Analiza dokumentu",
-            FileHandler._analyze_document_operation
-        )
-        
-        if not result:
-            # Operacja przerwana lub błąd
-            return
-        
-        # Przygotuj wiadomość wynikową
-        file_name = result["file_name"]
-        analysis = result["analysis"]
-        
-        # Skróć analizę, jeśli jest za długa
-        analysis_excerpt = analysis[:3000]
-        if len(analysis) > 3000:
-            analysis_excerpt += "...\n\n(Analiza została skrócona ze względu na długość)"
-        
-        result_message = f"*Analiza dokumentu:* {file_name}\n\n{analysis_excerpt}"
-        
-        # Dodaj poradę, jeśli potrzebna
+        # Add tip if appropriate
         if should_show_tip(user_id, context):
-            tip = get_random_tip('document')
+            tip = get_random_tip(file_type)
             result_message += f"\n\n💡 *Porada:* {tip}"
         
-        # Wyślij analizę do użytkownika
-        await FileHandler.send_message(
-            update,
-            context,
-            result_message,
-            category="document"
+        await message.edit_text(result_message, parse_mode=ParseMode.MARKDOWN)
+        
+        # Show low credits warning if needed
+        if credits_after < 5:
+            low_credits_warning = create_header("Niski stan kredytów", "warning") + \
+                                f"Pozostało Ci tylko *{credits_after}* kredytów. Rozważ zakup pakietu."
+            
+            keyboard = [[InlineKeyboardButton("💳 " + get_text("buy_credits_btn", language), callback_data="menu_credits_buy")]]
+            await update.message.reply_text(low_credits_warning, parse_mode=ParseMode.MARKDOWN, 
+                                           reply_markup=InlineKeyboardMarkup(keyboard))
+        
+        return True
+    except Exception as e:
+        await message.edit_text(
+            create_header("Błąd operacji", "error") +
+            f"Wystąpił błąd podczas {operation_name.lower()}: {str(e)}",
+            parse_mode=ParseMode.MARKDOWN
         )
+        return False
+
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Obsługa przesłanych dokumentów z ulepszoną prezentacją"""
+    if not await _check_file_prerequisites(update, context, "document"):
+        return
     
-    @staticmethod
-    async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """
-        Obsługa przesłanych zdjęć z ulepszoną prezentacją
-        """
-        user_id = update.effective_user.id
-        language = FileHandler.get_user_language(context, user_id)
+    user_id = update.effective_user.id
+    language = get_user_language(context, user_id)
+    document = update.message.document
+    file_name = document.file_name
+    credit_cost = CREDIT_COSTS["document"]
+    credits = get_user_credits(user_id)
+    
+    caption = update.message.caption or ""
+    caption_lower = caption.lower()
+    
+    is_pdf = file_name.lower().endswith('.pdf')
+    
+    if is_pdf and any(word in caption_lower for word in ["tłumacz", "przetłumacz", "translate", "переводить"]):
+        options_message = create_header("Opcje dla dokumentu PDF", "document") + \
+                         f"Wykryto dokument PDF: *{file_name}*\n\nWybierz co chcesz zrobić z tym dokumentem:"
         
-        # Sprawdź, czy użytkownik ma aktywną subskrypcję
-        if not check_active_subscription(user_id):
-            keyboard = [
-                [InlineKeyboardButton("💳 " + get_text("buy_credits_btn", language), callback_data="menu_credits_buy")],
-                [InlineKeyboardButton("⬅️ " + get_text("back", language, default="Powrót"), callback_data="menu_back_main")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await FileHandler.send_error(
-                update,
-                context,
-                get_text("subscription_expired_message", language, default="Twoja subskrypcja wygasła lub nie masz wystarczającej liczby kredytów, aby wykonać tę operację. Kup pakiet kredytów, aby kontynuować."),
-                show_back_button=False
-            )
-            return
+        options_message += "\n\n" + create_section("Koszt operacji", 
+            f"▪️ Analiza dokumentu: *{CREDIT_COSTS['document']}* kredytów\n" +
+            f"▪️ Tłumaczenie dokumentu: *8* kredytów")
         
-        # Wybierz zdjęcie o najwyższej rozdzielczości
-        photo = update.message.photo[-1]
-        
-        # Określ koszt operacji
-        credit_cost = CREDIT_COSTS["photo"]
-        
-        # Sprawdź podpis, aby określić rodzaj operacji
-        caption = update.message.caption or ""
-        
-        # Jeśli nie ma podpisu, pokaż opcje
-        if not caption:
-            options_message = get_text("photo_options", language, default="Wykryto zdjęcie. Wybierz co chcesz zrobić z tym zdjęciem:")
-            
-            # Pokaż koszty operacji
-            options_message += "\n\n" + create_section("Koszt operacji", 
-                f"▪️ Analiza zdjęcia: *{CREDIT_COSTS['photo']}* kredytów\n"
-                f"▪️ Tłumaczenie tekstu: *{CREDIT_COSTS['photo']}* kredytów")
-            
-            # Dodaj poradę, jeśli potrzebna
-            if should_show_tip(user_id, context):
-                tip = get_random_tip('document')
-                options_message += f"\n\n💡 *Porada:* {tip}"
-            
-            # Przyciski operacji
-            keyboard = [
-                [
-                    InlineKeyboardButton("🔍 Analiza zdjęcia", callback_data="analyze_photo"),
-                    InlineKeyboardButton("🔤 Tłumaczenie tekstu", callback_data="translate_photo")
-                ],
-                [
-                    InlineKeyboardButton("❌ Anuluj", callback_data="cancel_operation")
-                ]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await FileHandler.send_message(
-                update,
-                context,
-                options_message,
-                reply_markup=reply_markup,
-                category="image"
-            )
-            
-            # Zapisz informacje o zdjęciu w kontekście
-            if 'user_data' not in context.chat_data:
-                context.chat_data['user_data'] = {}
-            if user_id not in context.chat_data['user_data']:
-                context.chat_data['user_data'][user_id] = {}
-                
-            context.chat_data['user_data'][user_id]['last_photo_id'] = photo.file_id
-            
-            return
-        
-        # Określ tryb analizy na podstawie podpisu
-        caption_lower = caption.lower()
-        
-        # Sprawdź czy to tłumaczenie
-        if any(word in caption_lower for word in ["tłumacz", "przetłumacz", "translate", "переводить"]):
-            mode = "translate"
-            operation_name = "Tłumaczenie tekstu ze zdjęcia"
-        else:
-            mode = "analyze"
-            operation_name = "Analiza zdjęcia"
-        
-        # Stwórz funkcję lambda do wykonania odpowiedniej operacji z parametrem mode
-        async def analyze_with_mode(update, context):
-            return await FileHandler._analyze_photo_operation(update, context, mode)
-        
-        # Uruchom operację z obsługą kredytów
-        result = await FileHandler.process_operation_with_credits(
-            update,
-            context,
-            credit_cost,
-            operation_name,
-            analyze_with_mode
-        )
-        
-        if not result:
-            # Operacja przerwana lub błąd
-            return
-        
-        # Przygotuj wiadomość wynikową
-        analysis_result = result["result"]
-        current_mode = result["mode"]
-        
-        if current_mode == "translate":
-            category = "translation"
-            title = "Tłumaczenie tekstu ze zdjęcia"
-        else:
-            category = "analysis"
-            title = "Analiza zdjęcia"
-        
-        # Dodaj poradę, jeśli potrzebna
-        tip_text = ""
         if should_show_tip(user_id, context):
             tip = get_random_tip('document')
-            tip_text = f"\n\n💡 *Porada:* {tip}"
+            options_message += f"\n\n💡 *Porada:* {tip}"
         
-        # Wyślij analizę/tłumaczenie do użytkownika
-        await FileHandler.send_message(
-            update,
-            context,
-            f"{analysis_result}{tip_text}",
-            category=category
-        )
+        keyboard = [
+            [
+                InlineKeyboardButton("📝 Analiza dokumentu", callback_data="analyze_document"),
+                InlineKeyboardButton("🔤 Tłumaczenie dokumentu", callback_data="translate_document")
+            ],
+            [InlineKeyboardButton("❌ Anuluj", callback_data="cancel_operation")]
+        ]
+        
+        await update.message.reply_text(options_message, parse_mode=ParseMode.MARKDOWN,
+                                       reply_markup=InlineKeyboardMarkup(keyboard))
+        
+        if 'user_data' not in context.chat_data:
+            context.chat_data['user_data'] = {}
+        if user_id not in context.chat_data['user_data']:
+            context.chat_data['user_data'][user_id] = {}
+            
+        context.chat_data['user_data'][user_id]['last_document_id'] = document.file_id
+        context.chat_data['user_data'][user_id]['last_document_name'] = file_name
+        
+        return
+    
+    cost_warning = check_operation_cost(user_id, credit_cost, credits, "Analiza dokumentu", context)
+    if cost_warning['require_confirmation'] and cost_warning['level'] in ['warning', 'critical']:
+        warning_message = create_header("Potwierdzenie kosztu", "warning") + \
+                         cost_warning['message'] + "\n\nCzy chcesz kontynuować?"
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Tak, analizuj", callback_data=f"confirm_doc_analysis_{document.file_id}"),
+                InlineKeyboardButton("❌ Anuluj", callback_data="cancel_operation")
+            ]
+        ]
+        
+        await update.message.reply_text(warning_message, parse_mode=ParseMode.MARKDOWN,
+                                      reply_markup=InlineKeyboardMarkup(keyboard))
+        
+        if 'user_data' not in context.chat_data:
+            context.chat_data['user_data'] = {}
+        if user_id not in context.chat_data['user_data']:
+            context.chat_data['user_data'][user_id] = {}
+            
+        context.chat_data['user_data'][user_id]['last_document_id'] = document.file_id
+        context.chat_data['user_data'][user_id]['last_document_name'] = file_name
+        
+        return
+    
+    await _handle_file_analysis(
+        update, context, document.file_id, file_name, "document", 
+        "Analiza dokumentu", analyze_document, credit_cost
+    )
 
-    @staticmethod
-    async def handle_document_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """
-        Obsługuje potwierdzenie analizy dokumentu
-        """
-        query = update.callback_query
-        user_id = query.from_user.id
-        language = FileHandler.get_user_language(context, user_id)
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Obsługa przesłanych zdjęć z ulepszoną prezentacją"""
+    if not await _check_file_prerequisites(update, context, "photo"):
+        return
+    
+    user_id = update.effective_user.id
+    language = get_user_language(context, user_id)
+    
+    credit_cost = CREDIT_COSTS["photo"]
+    credits = get_user_credits(user_id)
+    
+    photo = update.message.photo[-1]
+    
+    caption = update.message.caption or ""
+    
+    if not caption:
+        options_message = create_header("Opcje dla zdjęcia", "image") + \
+                         "Wykryto zdjęcie. Wybierz co chcesz zrobić z tym zdjęciem:"
         
-        await query.answer()
+        options_message += "\n\n" + create_section("Koszt operacji", 
+            f"▪️ Analiza zdjęcia: *{CREDIT_COSTS['photo']}* kredytów\n" +
+            f"▪️ Tłumaczenie tekstu: *{CREDIT_COSTS['photo']}* kredytów")
         
-        if query.data.startswith("confirm_doc_analysis_"):
-            # Extract document_id from callback data
-            document_id = query.data[20:]
+        if should_show_tip(user_id, context):
+            tip = get_random_tip('document')
+            options_message += f"\n\n💡 *Porada:* {tip}"
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("🔍 Analiza zdjęcia", callback_data="analyze_photo"),
+                InlineKeyboardButton("🔤 Tłumaczenie tekstu", callback_data="translate_photo")
+            ],
+            [InlineKeyboardButton("❌ Anuluj", callback_data="cancel_operation")]
+        ]
+        
+        await update.message.reply_text(options_message, parse_mode=ParseMode.MARKDOWN,
+                                       reply_markup=InlineKeyboardMarkup(keyboard))
+        
+        if 'user_data' not in context.chat_data:
+            context.chat_data['user_data'] = {}
+        if user_id not in context.chat_data['user_data']:
+            context.chat_data['user_data'][user_id] = {}
             
-            # Sprawdź dane dokumentu w kontekście
-            if ('user_data' not in context.chat_data or 
-                user_id not in context.chat_data['user_data'] or
-                'last_document_name' not in context.chat_data['user_data'][user_id]):
-                
-                await query.edit_message_text(
-                    create_header("Błąd operacji", "error") +
-                    "Nie znaleziono informacji o dokumencie. Spróbuj wysłać go ponownie.",
-                    parse_mode=ParseMode.MARKDOWN
-                )
-                return
+        context.chat_data['user_data'][user_id]['last_photo_id'] = photo.file_id
+        
+        return
+    
+    caption_lower = caption.lower()
+    
+    # Determine operation type
+    if any(word in caption_lower for word in ["tłumacz", "przetłumacz", "translate", "переводить"]):
+        mode = "translate"
+        operation_name = "Tłumaczenie tekstu ze zdjęcia"
+    else:
+        mode = "analyze"
+        operation_name = "Analiza zdjęcia"
+    
+    cost_warning = check_operation_cost(user_id, credit_cost, credits, operation_name, context)
+    if cost_warning['require_confirmation'] and cost_warning['level'] in ['warning', 'critical']:
+        warning_message = create_header("Potwierdzenie kosztu", "warning") + \
+                         cost_warning['message'] + "\n\nCzy chcesz kontynuować?"
+        
+        callback_data = f"confirm_photo_{mode}_{photo.file_id}"
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Tak, kontynuuj", callback_data=callback_data),
+                InlineKeyboardButton("❌ Anuluj", callback_data="cancel_operation")
+            ]
+        ]
+        
+        await update.message.reply_text(warning_message, parse_mode=ParseMode.MARKDOWN,
+                                      reply_markup=InlineKeyboardMarkup(keyboard))
+        
+        if 'user_data' not in context.chat_data:
+            context.chat_data['user_data'] = {}
+        if user_id not in context.chat_data['user_data']:
+            context.chat_data['user_data'][user_id] = {}
             
-            file_name = context.chat_data['user_data'][user_id]['last_document_name']
-            credit_cost = CREDIT_COSTS["document"]
-            
-            # Pokaż informację o przetwarzaniu
-            await query.edit_message_text(
-                create_status_indicator('loading', "Analizowanie dokumentu") + "\n\n" +
-                f"*Dokument:* {file_name}",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            
-            # Pobierz plik
-            try:
-                file = await context.bot.get_file(document_id)
-                file_bytes = await file.download_as_bytearray()
-                
-                # Analizuj dokument
-                analysis = await analyze_document(file_bytes, file_name)
-                
-                # Odejmij kredyty i stwórz raport
-                credit_report = await FileHandler.deduct_credits(user_id, credit_cost, f"Analiza dokumentu: {file_name}", context)
-                
-                # Skróć analizę, jeśli jest za długa
-                analysis_excerpt = analysis[:3000]
-                if len(analysis) > 3000:
-                    analysis_excerpt += "...\n\n(Analiza została skrócona ze względu na długość)"
-                
-                # Przygotuj rezultat
-                result_message = create_header(f"Analiza dokumentu: {file_name}", "document")
-                result_message += analysis_excerpt
-                result_message += f"\n\n{credit_report['report']}"
-                
-                # Dodaj poradę, jeśli potrzebna
-                if should_show_tip(user_id, context):
-                    tip = get_random_tip('document')
-                    result_message += f"\n\n💡 *Porada:* {tip}"
-                
-                # Wyślij rezultat
-                await query.edit_message_text(
-                    result_message,
-                    parse_mode=ParseMode.MARKDOWN
-                )
-                
-                # Sprawdź stan kredytów
-                await FileHandler.show_low_credits_warning(update, context, credit_report["credits_after"])
-                
-            except Exception as e:
-                await query.edit_message_text(
-                    create_header("Błąd analizy", "error") +
-                    f"Wystąpił błąd podczas analizy dokumentu: {str(e)}",
-                    parse_mode=ParseMode.MARKDOWN
-                )
+        context.chat_data['user_data'][user_id]['last_photo_id'] = photo.file_id
+        context.chat_data['user_data'][user_id]['last_photo_mode'] = mode
+        
+        return
+    
+    await _handle_file_analysis(
+        update, context, photo.file_id, None, "photo", operation_name,
+        analyze_image, credit_cost, mode=mode
+    )
