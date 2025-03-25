@@ -184,7 +184,8 @@ async def new_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     language = get_user_language(context, user_id)
     
     # Utwórz nową konwersację
-    conversation = create_new_conversation(user_id)
+    # Dodane await przed create_new_conversation
+    conversation = await create_new_conversation(user_id)
     
     if conversation:
         # Oznacz czat jako zainicjowany

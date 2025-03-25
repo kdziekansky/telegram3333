@@ -326,8 +326,8 @@ async def credit_stats_command(update: Update, context: ContextTypes.DEFAULT_TYP
         message += f"Aktualny stan kredytów: *{credits}*\n\n"
         
         try:
-            # Ważne: importujemy i używamy await
-            from database.supabase_client import get_user_credit_stats
+            from database.credits_client import get_user_credit_stats
+            # Dodane await przed wywołaniem funkcji asynchronicznej
             stats = await get_user_credit_stats(user_id)
             
             if stats:
@@ -384,10 +384,9 @@ async def credit_stats_command(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         
         try:
-            # Importujemy z poprawionego modułu
             from utils.credit_analytics import generate_credit_usage_chart, generate_usage_breakdown_chart
             
-            # Używamy await!
+            # Dodane await przed wywołaniem funkcji asynchronicznej
             chart = await generate_credit_usage_chart(user_id)
             if chart:
                 await update.message.reply_photo(
@@ -395,7 +394,7 @@ async def credit_stats_command(update: Update, context: ContextTypes.DEFAULT_TYP
                     caption="Historia wykorzystania kredytów"
                 )
                 
-            # Używamy await!
+            # Dodane await przed wywołaniem funkcji asynchronicznej
             breakdown_chart = await generate_usage_breakdown_chart(user_id)
             if breakdown_chart:
                 await update.message.reply_photo(

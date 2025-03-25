@@ -67,7 +67,48 @@ class ConversationRepository(BaseRepository[Conversation]):
         except Exception as e:
             logger.error(f"Błąd tworzenia konwersacji: {e}")
             raise
-    
+
+    async def create_new_conversation(self, user_id, theme_id=None):
+        """Tworzy nową konwersację dla użytkownika"""
+        try:
+            from database.models import Conversation
+            
+            # Utwórz obiekt konwersacji
+            new_conversation = Conversation(user_id=user_id)
+            if theme_id:
+                new_conversation.theme_id = theme_id
+            
+            # Użyj istniejącej metody create
+            return await self.create(new_conversation)
+        except Exception as e:
+            logger.error(f"Błąd tworzenia nowej konwersacji dla użytkownika {user_id}: {e}")
+            # Fallback - bezpośrednie użycie klienta
+            try:
+                now = datetime.now(pytz.UTC).isoformat()
+                
+                conversation_data = {
+                    "user_id": user_id,
+                    "created_at": now,
+                    "last_message_at": now
+                }
+                
+                if theme_id:
+                    conversation_data["theme_id"] = theme_id
+                
+                result = await self.client.query(
+                    self.table, 
+                    query_type="insert",
+                    data=conversation_data
+                )
+                
+                if result:
+                    return Conversation.from_dict(result[0])
+                
+                raise Exception("Błąd tworzenia konwersacji - brak odpowiedzi")
+            except Exception as e2:
+                logger.error(f"Fallback tworzenia konwersacji również zawiódł: {e2}")
+                raise
+
     async def update(self, conversation: Conversation) -> Conversation:
         """Aktualizuje istniejącą konwersację"""
         try:
