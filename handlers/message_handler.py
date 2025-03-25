@@ -60,14 +60,15 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     credits = get_user_credits(user_id)
     
     # Sprawdź, czy użytkownik ma wystarczającą liczbę kredytów
-    if not await check_user_credits(user_id, credit_cost):  # Dodajemy await
+    if not check_user_credits(user_id, credit_cost):
         # Enhanced credit warning with visual indicators
         warning_message = create_header("Niewystarczające kredyty", "warning")
         warning_message += (
             f"Nie masz wystarczającej liczby kredytów, aby wysłać wiadomość.\n\n"
             f"▪️ Koszt operacji: *{credit_cost}* kredytów\n"
             f"▪️ Twój stan kredytów: *{credits}* kredytów\n\n"
-            f"Potrzebujesz jeszcze *{credit_cost - credits}* kredytów."
+            f"Potrzebujesz jeszcze *{credit_cost - credits}* kredytów.\n\n"
+            f"Wybierz tańszy model (np. O3-mini lub GPT-3.5 Turbo za 1 kredyt/wiadomość)"
         )
         
         # Add credit recommendation if available
@@ -81,6 +82,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"▪️ {recommendation['reason']}")
         
         keyboard = [
+            [InlineKeyboardButton("🤖 " + get_text("change_model", language, default="Zmień model"), callback_data="settings_model")],
             [InlineKeyboardButton("💳 " + get_text("buy_credits_btn", language, default="Kup kredyty"), callback_data="menu_credits_buy")],
             [InlineKeyboardButton("⬅️ " + get_text("menu_back_main", language, default="Menu główne"), callback_data="menu_back_main")]
         ]

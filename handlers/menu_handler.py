@@ -308,7 +308,7 @@ async def handle_back_to_main(update, context):
                 return False
 
 async def handle_model_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Model selection handler"""
+    """Model selection handler - zaktualizowany o modele Claude"""
     query = update.callback_query
     user_id = query.from_user.id
     language = get_user_language(context, user_id)
@@ -317,14 +317,64 @@ async def handle_model_selection(update: Update, context: ContextTypes.DEFAULT_T
     message_text += get_text("settings_choose_model", language, default="Wybierz model AI:")
     
     buttons = []
-    for model_id, model_name in AVAILABLE_MODELS.items():
-        credit_cost = CREDIT_COSTS["message"].get(model_id, CREDIT_COSTS["message"]["default"])
-        buttons.append([
-            InlineKeyboardButton(
-                f"{model_name} ({credit_cost} {get_text('credits_per_message', language)})", 
-                callback_data=f"model_{model_id}"
-            )
-        ])
+    
+    # Grupowanie modeli według kategorii i dostawcy
+    standard_openai_models = ["gpt-3.5-turbo", "o3-mini"]
+    premium_openai_models = ["gpt-4o", "gpt-4", "o1"]
+    standard_claude_models = ["claude-3-5-haiku", "claude-3-haiku"]
+    premium_claude_models = ["claude-3-5-sonnet", "claude-3-opus"]
+    
+    # OpenAI - Modele standardowe
+    message_text += "\n\n*🤖 OpenAI - Modele standardowe:*"
+    for model_id in standard_openai_models:
+        if model_id in AVAILABLE_MODELS:
+            model_name = AVAILABLE_MODELS[model_id]
+            credit_cost = CREDIT_COSTS["message"].get(model_id, CREDIT_COSTS["message"]["default"])
+            buttons.append([
+                InlineKeyboardButton(
+                    f"{model_name} ({credit_cost} {get_text('credits_per_message', language)})", 
+                    callback_data=f"model_{model_id}"
+                )
+            ])
+    
+    # OpenAI - Modele premium
+    message_text += "\n\n*🤖 OpenAI - Modele premium:*"
+    for model_id in premium_openai_models:
+        if model_id in AVAILABLE_MODELS:
+            model_name = AVAILABLE_MODELS[model_id]
+            credit_cost = CREDIT_COSTS["message"].get(model_id, CREDIT_COSTS["message"]["default"])
+            buttons.append([
+                InlineKeyboardButton(
+                    f"⭐ {model_name} ({credit_cost} {get_text('credits_per_message', language)})", 
+                    callback_data=f"model_{model_id}"
+                )
+            ])
+    
+    # Claude - Modele standardowe
+    message_text += "\n\n*🤖 Claude - Modele standardowe:*"
+    for model_id in standard_claude_models:
+        if model_id in AVAILABLE_MODELS:
+            model_name = AVAILABLE_MODELS[model_id]
+            credit_cost = CREDIT_COSTS["message"].get(model_id, CREDIT_COSTS["message"]["default"])
+            buttons.append([
+                InlineKeyboardButton(
+                    f"{model_name} ({credit_cost} {get_text('credits_per_message', language)})", 
+                    callback_data=f"model_{model_id}"
+                )
+            ])
+    
+    # Claude - Modele premium
+    message_text += "\n\n*🤖 Claude - Modele premium:*"
+    for model_id in premium_claude_models:
+        if model_id in AVAILABLE_MODELS:
+            model_name = AVAILABLE_MODELS[model_id]
+            credit_cost = CREDIT_COSTS["message"].get(model_id, CREDIT_COSTS["message"]["default"])
+            buttons.append([
+                InlineKeyboardButton(
+                    f"⭐ {model_name} ({credit_cost} {get_text('credits_per_message', language)})", 
+                    callback_data=f"model_{model_id}"
+                )
+            ])
     
     buttons.append([InlineKeyboardButton(get_text("back", language), callback_data="menu_section_settings")])
     

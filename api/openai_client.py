@@ -1,4 +1,5 @@
-# api/openai_client.py
+# Modyfikacja w api/openai_client.py
+
 import asyncio
 import time
 import logging
@@ -18,16 +19,27 @@ class OpenAIClient(APIClient):
         http_client = AsyncClient()
         self.client = AsyncOpenAI(api_key=api_key, http_client=http_client)
         logger.info(f"Klient OpenAI zainicjalizowany z kluczem API: {'ważny' if api_key else 'brak'}")
+        
+        # Mapowanie modeli na identyfikatory API
+        self.model_mapping = {
+            "o1": "o1",  # Poprawny identyfikator API dla modelu O1
+            "o3-mini": "gpt-4o-mini",  # Poprawny identyfikator API dla O3-mini
+        }
     
     async def chat_completion(self, messages: List[Dict[str, str]], model: str = DEFAULT_MODEL, stream: bool = False, **kwargs) -> Any:
         """Generuje odpowiedź czatu z API OpenAI"""
         try:
+            # Mapowanie identyfikatorów modeli na identyfikatory API
+            actual_model = self.model_mapping.get(model, model)
+            
             if "gpt-4" in model and not stream:
                 await asyncio.sleep(0.5)
                 
+            logger.info(f"Używam modelu API: {actual_model} (wewnętrzny: {model})")
+            
             return await self._request_with_retry(
                 self.client.chat.completions.create,
-                model=model,
+                model=actual_model,
                 messages=messages,
                 stream=stream,
                 **kwargs
@@ -36,6 +48,7 @@ class OpenAIClient(APIClient):
             logger.error(f"Błąd API OpenAI: {str(e)}")
             raise
     
+    # Pozostałe metody pozostają niezmienione
     async def chat_completion_text(self, messages: List[Dict[str, str]], model: str = DEFAULT_MODEL, **kwargs) -> str:
         """Generuje odpowiedź czatu i zwraca tekst"""
         response = await self.chat_completion(messages, model, stream=False, **kwargs)

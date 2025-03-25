@@ -6,10 +6,27 @@ os.environ.pop("http_proxy", None)
 os.environ.pop("https_proxy", None)
 os.environ["HTTPX_SKIP_PROXY"] = "true"
 
+# Załaduj zmienne z .env na samym początku
+from dotenv import load_dotenv
+load_dotenv()
+
 import logging
 logging.basicConfig(level=logging.INFO)
+
+# Sprawdź klucze API po załadowaniu dotenv
+from config import TELEGRAM_TOKEN, OPENAI_API_KEY, ANTHROPIC_API_KEY
+
+# Logowanie informacji o dostępności kluczy API
+if not OPENAI_API_KEY:
+    logging.warning("Brak klucza API OpenAI - funkcje OpenAI będą niedostępne")
+if not ANTHROPIC_API_KEY:
+    logging.warning("Brak klucza API Anthropic - funkcje Claude będą niedostępne")
+
+# Inicjalizacja serwisu API zawczasu
+from services.api_service import APIService
+api_service = APIService()
+
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
-from config import TELEGRAM_TOKEN
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -92,5 +109,5 @@ application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
 # Uruchomienie bota
 if __name__ == "__main__":
-    print("Bot uruchomiony. Naciśnij Ctrl+C, aby zatrzymać.")
+    print("Bot uruchomiony z obsługą modeli OpenAI i Claude. Naciśnij Ctrl+C, aby zatrzymać.")
     application.run_polling()

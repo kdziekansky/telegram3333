@@ -18,32 +18,51 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 DEFAULT_MODEL = "gpt-4o"  # Domyślny model OpenAI
 DALL_E_MODEL = "dall-e-3"  # Model do generowania obrazów
 
+ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
+
 # Predefiniowane szablony promptów
 DEFAULT_SYSTEM_PROMPT = "Jesteś pomocnym asystentem AI."
 
-# Dostępne modele
 AVAILABLE_MODELS = {
+    # Istniejące modele OpenAI
     "gpt-3.5-turbo": "GPT-3.5 Turbo", 
     "gpt-4": "GPT-4",
-    "gpt-4o": "GPT-4o"
+    "gpt-4o": "GPT-4o",
+    "o1": "O1",
+    "o3-mini": "O3-mini",
+    
+    # Modele Claude
+    "claude-3-5-sonnet": "Claude 3.5 Sonnet",
+    "claude-3-5-haiku": "Claude 3.5 Haiku",
+    "claude-3-haiku": "Claude 3 Haiku",
+    "claude-3-opus": "Claude 3 Opus"
 }
 
 # System kredytów
 CREDIT_COSTS = {
     # Koszty wiadomości w zależności od modelu
     "message": {
+        # Istniejące modele
         "gpt-3.5-turbo": 1,
         "gpt-4": 5,
         "gpt-4o": 3,
+        "o1": 8,
+        "o3-mini": 1,
+        
+        # Modele Claude - ustalamy koszty proporcjonalne do cen z tabeli
+        "claude-3-5-sonnet": 2,  # $3/MTok, tańszy niż GPT-4 ale droższy niż GPT-3.5
+        "claude-3-5-haiku": 1,   # $0.80/MTok, podobnie do GPT-3.5
+        "claude-3-haiku": 1,     # $0.25/MTok, najtańszy
+        "claude-3-opus": 10,     # $15/MTok, najdroższy model
+        
         "default": 1
     },
-    # Koszty generowania obrazów
+    # Pozostałe koszty bez zmian
     "image": {
         "standard": 10,
         "hd": 15,
         "default": 10
     },
-    # Koszty analizy plików
     "document": 5,
     "photo": 8
 }
