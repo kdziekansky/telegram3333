@@ -15,15 +15,20 @@ class UserRepository(BaseRepository[User]):
         self.table = "users"
     
     async def get_by_id(self, id: int) -> Optional[User]:
-        """Pobiera użytkownika po ID"""
-        try:
-            result = await self.client.select(self.table, filters={"id": id})
-            if result:
-                return User.from_dict(result[0])
-            return None
-        except Exception as e:
-            logger.error(f"Błąd pobierania użytkownika po ID {id}: {e}")
-            return None
+            """Pobiera użytkownika po ID"""
+            try:
+                result = await self.client.query(
+                    self.table, 
+                    query_type="select",
+                    filters={"id": id}
+                )
+                
+                if result and len(result) > 0:
+                    return User.from_dict(result[0])
+                return None
+            except Exception as e:
+                logger.error(f"Błąd pobierania użytkownika po ID {id}: {e}")
+                return None
     
     async def get_all(self) -> List[User]:
         """Pobiera wszystkich użytkowników"""
@@ -51,3 +56,27 @@ class UserRepository(BaseRepository[User]):
         except Exception as e:
             logger.error(f"Błąd tworzenia użytkownika: {e}")
             raise
+
+    async def increment_messages_used(self, user_id: int) -> bool:
+        """Zwiększa licznik wykorzystanych wiadomości dla użytkownika"""
+        try:
+            # Pobierz aktualne dane
+            user = await self.get_by_id(user_id)
+            if not user:
+                return False
+                
+            # Zwiększ licznik
+            messages_used = getattr(user, 'messages_used', 0) + 1
+            
+            # Aktualizuj dane użytkownika
+            await self.client.query(
+                self.table,
+                query_type="update",
+                filters={"id": user_id},
+                data={"messages_used": messages_used}
+            )
+            
+            return True
+        except Exception as e:
+            logger.error(f"Błąd podczas zwiększania licznika wiadomości: {e}")
+            return False

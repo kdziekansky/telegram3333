@@ -71,15 +71,21 @@ class Conversation:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Conversation':
         """Tworzy obiekt Conversation z danych słownikowych"""
+        # Usuń niewspierane pola (jak theme_id) przed utworzeniem obiektu
+        filtered_data = {}
+        for key, value in data.items():
+            if key in ['id', 'user_id', 'created_at', 'last_message_at']:
+                filtered_data[key] = value
+        
         # Konwersja pól datetime z ISO string
         for date_field in ['created_at', 'last_message_at']:
-            if date_field in data and data[date_field]:
-                if isinstance(data[date_field], str):
-                    data[date_field] = datetime.fromisoformat(
-                        data[date_field].replace('Z', '+00:00')
+            if date_field in filtered_data and filtered_data[date_field]:
+                if isinstance(filtered_data[date_field], str):
+                    filtered_data[date_field] = datetime.fromisoformat(
+                        filtered_data[date_field].replace('Z', '+00:00')
                     )
         
-        return cls(**data)
+        return cls(**filtered_data)
 
 @dataclass
 class Message:

@@ -33,6 +33,8 @@ async def route_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # First, acknowledge the callback to remove waiting state
     await query.answer()
     
+    # Usunięto obsługę callback'ów związanych z tematami (theme)
+    
     # Menu section callbacks
     if query.data.startswith("menu_section_") or query.data == "menu_image_generate" or query.data == "menu_help":
         return await route_menu_section_callback(update, context)

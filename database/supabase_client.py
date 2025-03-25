@@ -22,9 +22,9 @@ async def get_active_conversation(user_id):
     """Funkcja dla kompatybilności wstecznej"""
     return await repository_service.conversation_repository.get_active_conversation(user_id)
 
-async def create_new_conversation(user_id, theme_id=None):
+async def create_new_conversation(user_id):
     """Funkcja dla kompatybilności wstecznej"""
-    return await repository_service.conversation_repository.create_new_conversation(user_id, theme_id)
+    return await repository_service.conversation_repository.create_new_conversation(user_id)
 
 async def save_message(conversation_id, user_id, content, is_from_user=True, model_used=None):
     """Funkcja dla kompatybilności wstecznej"""
@@ -66,25 +66,26 @@ async def get_credit_usage_by_type(user_id, days=30):
     """Funkcja dla kompatybilności wstecznej"""
     return await repository_service.credit_repository.get_usage_by_type(user_id, days)
 
-async def get_user_credit_stats(user_id):
-    """Funkcja dla kompatybilności wstecznej"""
-    return await repository_service.credit_repository.get_user_stats(user_id)
-
+# Wycofane funkcje związane z tematami - zastąpione prostymi implementacjami
 async def create_conversation_theme(user_id, theme_name):
-    """Funkcja dla kompatybilności wstecznej"""
-    return await repository_service.conversation_repository.create_theme(user_id, theme_name)
+    """Wycofana funkcja - zwraca None"""
+    logger.warning("Wywołanie wycofanej funkcji create_conversation_theme")
+    return None
 
 async def get_user_themes(user_id):
-    """Funkcja dla kompatybilności wstecznej"""
-    return await repository_service.conversation_repository.get_user_themes(user_id)
+    """Wycofana funkcja - zwraca pustą listę"""
+    logger.warning("Wywołanie wycofanej funkcji get_user_themes")
+    return []
 
 async def get_theme_by_id(theme_id):
-    """Funkcja dla kompatybilności wstecznej"""
-    return await repository_service.conversation_repository.get_theme_by_id(theme_id)
+    """Wycofana funkcja - zwraca None"""
+    logger.warning("Wywołanie wycofanej funkcji get_theme_by_id")
+    return None
 
 async def get_active_themed_conversation(user_id, theme_id):
-    """Funkcja dla kompatybilności wstecznej"""
-    return await repository_service.conversation_repository.get_active_themed_conversation(user_id, theme_id)
+    """Wycofana funkcja - zastąpiona przez zwykłe get_active_conversation"""
+    logger.warning("Wywołanie wycofanej funkcji get_active_themed_conversation")
+    return await repository_service.conversation_repository.get_active_conversation(user_id)
 
 async def save_prompt_template(name, description, prompt_text):
     """Funkcja dla kompatybilności wstecznej"""

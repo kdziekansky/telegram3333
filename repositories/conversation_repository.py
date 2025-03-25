@@ -52,9 +52,6 @@ class ConversationRepository(BaseRepository[Conversation]):
                 "last_message_at": now
             }
             
-            if hasattr(conversation, 'theme_id') and conversation.theme_id:
-                conversation_data["theme_id"] = conversation.theme_id
-            
             result = await self.client.query(
                 self.table, 
                 query_type="insert",
@@ -67,48 +64,7 @@ class ConversationRepository(BaseRepository[Conversation]):
         except Exception as e:
             logger.error(f"Błąd tworzenia konwersacji: {e}")
             raise
-
-    async def create_new_conversation(self, user_id, theme_id=None):
-        """Tworzy nową konwersację dla użytkownika"""
-        try:
-            from database.models import Conversation
-            
-            # Utwórz obiekt konwersacji
-            new_conversation = Conversation(user_id=user_id)
-            if theme_id:
-                new_conversation.theme_id = theme_id
-            
-            # Użyj istniejącej metody create
-            return await self.create(new_conversation)
-        except Exception as e:
-            logger.error(f"Błąd tworzenia nowej konwersacji dla użytkownika {user_id}: {e}")
-            # Fallback - bezpośrednie użycie klienta
-            try:
-                now = datetime.now(pytz.UTC).isoformat()
-                
-                conversation_data = {
-                    "user_id": user_id,
-                    "created_at": now,
-                    "last_message_at": now
-                }
-                
-                if theme_id:
-                    conversation_data["theme_id"] = theme_id
-                
-                result = await self.client.query(
-                    self.table, 
-                    query_type="insert",
-                    data=conversation_data
-                )
-                
-                if result:
-                    return Conversation.from_dict(result[0])
-                
-                raise Exception("Błąd tworzenia konwersacji - brak odpowiedzi")
-            except Exception as e2:
-                logger.error(f"Fallback tworzenia konwersacji również zawiódł: {e2}")
-                raise
-
+    
     async def update(self, conversation: Conversation) -> Conversation:
         """Aktualizuje istniejącą konwersację"""
         try:
@@ -116,9 +72,6 @@ class ConversationRepository(BaseRepository[Conversation]):
                 "user_id": conversation.user_id,
                 "last_message_at": datetime.now(pytz.UTC).isoformat()
             }
-            
-            if hasattr(conversation, 'theme_id') and conversation.theme_id:
-                conversation_data["theme_id"] = conversation.theme_id
             
             result = await self.client.query(
                 self.table, 
@@ -148,13 +101,10 @@ class ConversationRepository(BaseRepository[Conversation]):
             logger.error(f"Błąd usuwania konwersacji {id}: {e}")
             return False
     
-    async def get_active_conversation(self, user_id: int, theme_id: Optional[int] = None) -> Conversation:
-        """Pobiera aktywną konwersację dla użytkownika"""
+    async def get_active_conversation(self, user_id: int):
+        """Pobiera aktywną konwersację dla użytkownika w formie słownika"""
         try:
             filters = {"user_id": user_id}
-            
-            if theme_id:
-                filters["theme_id"] = theme_id
             
             result = await self.client.query(
                 self.table, 
@@ -165,21 +115,73 @@ class ConversationRepository(BaseRepository[Conversation]):
             )
             
             if result:
-                return Conversation.from_dict(result[0])
+                # Zwracamy bezpośrednio słownik wyniku
+                return result[0]
             
             # Jeśli nie znaleziono konwersacji, utwórz nową
-            new_conversation = Conversation(user_id=user_id)
-            
-            if theme_id:
-                new_conversation.theme_id = theme_id
-            
-            return await self.create(new_conversation)
+            return await self.create_new_conversation(user_id)
         except Exception as e:
             logger.error(f"Błąd pobierania aktywnej konwersacji dla użytkownika {user_id}: {e}")
-            # Utwórz nową konwersację jako awaryjną
+            # Próba utworzenia nowej konwersacji
+            return await self.create_new_conversation(user_id)
+
+    async def create_new_conversation(self, user_id: int):
+        """Tworzy nową konwersację dla użytkownika i zwraca słownik"""
+        try:
+            now = datetime.now(pytz.UTC).isoformat()
+            
+            conversation_data = {
+                "user_id": user_id,
+                "created_at": now,
+                "last_message_at": now
+            }
+            
+            result = await self.client.query(
+                self.table, 
+                query_type="insert",
+                data=conversation_data
+            )
+            
+            if result:
+                return result[0]  # Zwracamy surowy słownik
+            raise Exception("Błąd tworzenia konwersacji - brak odpowiedzi")
+        except Exception as e:
+            logger.error(f"Błąd tworzenia nowej konwersacji dla użytkownika {user_id}: {e}")
+            raise
+            
+    async def create_new_conversation(self, user_id: int) -> Conversation:
+        """Tworzy nową konwersację dla użytkownika"""
+        try:
+            # Utwórz nową konwersację
             new_conversation = Conversation(user_id=user_id)
-            
-            if theme_id:
-                new_conversation.theme_id = theme_id
-            
             return await self.create(new_conversation)
+        except Exception as e:
+            logger.error(f"Błąd tworzenia nowej konwersacji dla użytkownika {user_id}: {e}")
+            # Fallback - spróbuj utworzyć podstawowy obiekt
+            try:
+                now = datetime.now(pytz.UTC).isoformat()
+                conversation_data = {
+                    "user_id": user_id,
+                    "created_at": now,
+                    "last_message_at": now
+                }
+                
+                result = await self.client.query(
+                    self.table, 
+                    query_type="insert",
+                    data=conversation_data
+                )
+                
+                logger.info(f"Fallback: Utworzono konwersację dla {user_id} bez Conversation.from_dict")
+                
+                # Ręcznie utwórz obiekt Conversation
+                response = Conversation(
+                    id=result[0].get('id'),
+                    user_id=user_id,
+                    created_at=datetime.fromisoformat(result[0].get('created_at').replace('Z', '+00:00')),
+                    last_message_at=datetime.fromisoformat(result[0].get('last_message_at').replace('Z', '+00:00'))
+                )
+                return response
+            except Exception as e2:
+                logger.error(f"Fallback tworzenia konwersacji również zawiódł: {e2}")
+                raise e
